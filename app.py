@@ -1,12 +1,5 @@
-# Write a fixed version of the Streamlit app (v2.1) without the escaped triple-quotes.
-from pathlib import Path
-import zipfile
-
-root = Path("/mnt/data/etiqueta_webapp_v2_fix")
-(root / ".streamlit").mkdir(parents=True, exist_ok=True)
-
-app_py_fixed = '''# -*- coding: utf-8 -*-
-# app.py (v2.1) — inclui nome do destinatário nos nomes dos arquivos (fix de aspas)
+# -*- coding: utf-8 -*-
+# app.py (v2.1) — inclui nome do destinatário nos nomes dos arquivos (sem writes no FS)
 import io, re, unicodedata
 from copy import deepcopy
 from datetime import datetime
@@ -38,7 +31,7 @@ def guess_recipient_from_pdf_bytes(pdf_bytes: bytes) -> str:
         t = r.pages[0].extract_text() or ""
     except Exception:
         return "destinatario"
-    lines = [re.sub(r"\\s+", " ", (ln or "").strip()) for ln in t.splitlines() if (ln or "").strip()]
+    lines = [re.sub(r"\s+", " ", (ln or "").strip()) for ln in t.splitlines() if (ln or "").strip()]
     if not lines:
         return "destinatario"
     bad_words = {"documento", "assinatura", "recebedor", "correios", "remetente", "cep", "quadra", "bloco", "logradouro", "cnpj", "cpf"}
@@ -81,6 +74,7 @@ def build_crop_and_fit(pdf_bytes: bytes, page_index: int,
     x0, y0 = max(0.0, x0), max(0.0, y0)
     x1, y1 = min(pw, x1), min(ph, y1)
 
+    # (1) Crop exato (sem redimensionar)
     page_crop = deepcopy(page)
     page_crop.cropbox.lower_left  = (x0, y0)
     page_crop.cropbox.upper_right = (x1, y1)
@@ -88,14 +82,16 @@ def build_crop_and_fit(pdf_bytes: bytes, page_index: int,
     page_crop.mediabox.upper_right = (x1, y1)
     w_pt, h_pt = float(page_crop.mediabox.width), float(page_crop.mediabox.height)
 
+    # bytes do crop
+    wr_crop = PdfWriter(); wr_crop.add_page(page_crop)
+    buf_crop = io.BytesIO(); wr_crop.write(buf_crop)
+    b_crop = buf_crop.getvalue()
+
+    # (2) Fit para página alvo (100×150 mm por padrão)
     w_out, h_out = mm_to_pt(target_width_mm), mm_to_pt(target_height_mm)
     tx, ty = -x0, -y0
     sx, sy = (w_out / w_pt if w_pt else 1.0), (h_out / h_pt if h_pt else 1.0)
     s = min(sx, sy)
-
-    wr_crop = PdfWriter(); wr_crop.add_page(page_crop)
-    buf_crop = io.BytesIO(); wr_crop.write(buf_crop)
-    b_crop = buf_crop.getvalue()
 
     page_fit = deepcopy(page)
     page_fit.cropbox.lower_left  = (x0, y0)
@@ -146,23 +142,12 @@ if st.button("Gerar etiqueta (crop + fit 100×150)"):
                 extra_top_mm, extra_right_mm, extra_left_mm, extra_bottom_mm,
                 target_width_mm, target_height_mm
             )
-            # Extrair nome do destinatário a partir do CROP
-            try:
-                recip = PdfReader(io.BytesIO(b_crop)).pages[0].extract_text() or ""
-            except Exception:
-                recip = ""
-            import re
-            lines = [re.sub(r"\\s+", " ", (ln or "").strip()) for ln in recip.splitlines() if (ln or "").strip()]
-            name = "destinatario"
-            for i, ln in enumerate(lines):
-                if "destinat" in ln.lower() and i+1 < len(lines):
-                    candidate = lines[i+1]
-                    if len(candidate.split()) >= 2 and sum(ch.isdigit() for ch in candidate) <= 1 and len(candidate) <= 64:
-                        name = candidate; break
-            slug = slugify(name)
+            # extrai o nome do destinatário a partir do CROP
+            name_text = guess_recipient_from_pdf_bytes(b_crop)
+            slug = slugify(name_text)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            st.success(f"Arquivos gerados! Destinatário: **{name}**")
+            st.success(f"Arquivos gerados! Destinatário: **{name_text}**")
             st.caption(dbg)
             st.download_button("⬇️ Baixar recorte exato", data=b_crop, file_name=f"{slug}_{ts}_crop.pdf", mime="application/pdf")
             st.download_button("⬇️ Baixar versão 100×150 mm", data=b_fit, file_name=f"{slug}_{ts}_fit.pdf", mime="application/pdf")
@@ -177,16 +162,3 @@ st.markdown(
 - **Tamanho real / 100%**, sem "Ajustar à página"
 - Sem margens do driver"""
 )
-'''
-
-(root / "app.py").write_text(app_py_fixed, encoding="utf-8")
-(root / "requirements.txt").write_text("streamlit>=1.30\nPyPDF2>=3.0.0\n", encoding="utf-8")
-(root / ".streamlit" / "config.toml").write_text("[server]\nmaxUploadSize = 200\n", encoding="utf-8")
-
-zip_path = "/mnt/data/etiqueta_webapp_streamlit_v2_fix.zip"
-with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-    z.write(root / "app.py", arcname="app.py")
-    z.write(root / "requirements.txt", arcname="requirements.txt")
-    z.write(root / ".streamlit" / "config.toml", arcname=".streamlit/config.toml")
-
-zip_path
