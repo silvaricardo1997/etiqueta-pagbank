@@ -75,4 +75,5 @@ maxUploadSize = 200  # MB
 
 ## 🖨️ Dicas de impressão (Coibeu WKZ-80D ou similar)
 - Mídia: **100 × 150 mm (10 × 15 cm)**.
-- Escala: **Tamanho real / 100%** (desative “Ajustar à página”).\n- Desative margens automáticas do driver.\n\n---\n\n## 🔧 Solução de problemas\n- **ModuleNotFoundError (PyPDF2/streamlit)** → verifique se `requirements.txt` contém:\n  ```txt\n  streamlit>=1.30\n  PyPDF2>=3.0.0\n  ```\n- **Upload grande falha** → confira `maxUploadSize` em `.streamlit/config.toml` (ex.: `200 MB`).  \n- **Main file not found** no deploy → confirme `app.py` em **Main file path**.\n- **Corte desalinhado** → ajuste `extra_top_mm`, `extra_right_mm`, `extra_left_mm`, `extra_bottom_mm` em passos de 0,5–1,0 mm.\n\n---\n\nFeito com ❤️ para acelerar seu fluxo de impressão de etiquetas.\n
+- Escala: **Tamanho real / 100%** (desative “Ajustar à página”).
+- Desative margens automáticas do driver.
