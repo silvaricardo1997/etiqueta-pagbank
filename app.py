@@ -134,7 +134,7 @@ with st.sidebar:
     st.header("Parâmetros (mm) – aplicados a TODOS os PDFs enviados")
     st.caption("Use ponto decimal. Defaults = seus valores calibrados.")
     x_left_mm = st.number_input("X da esquerda (mm)", value=85.0, step=0.1)
-    y_top_mm = st.number_input("Y do topo (mm)", value=182.5, step=0.1)
+    y_top_mm = st.number_input("Y do topo (mm)", value=34.0, step=0.1)
     width_mm = st.number_input("Largura base (mm)", value=100.0, step=0.1)
     height_mm = st.number_input("Altura base (mm)", value=150.0, step=0.1)
 
