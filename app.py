@@ -178,6 +178,36 @@ if st.button("Processar (somente FIT 100×150)"):
                     r_fit = PdfReader(io.BytesIO(fit_bytes))
                     combined_fit_writer.add_page(r_fit.pages[0])
 
+                    # --- NOVA FEATURE: Buscar página com 'DECLARAÇÃO DE CONTEÚDO' ---
+                    reader = PdfReader(io.BytesIO(pdf_bytes))
+                    found_decl = False
+                    for idx, page in enumerate(reader.pages):
+                        try:
+                            text = page.extract_text() or ""
+                        except Exception:
+                            text = ""
+                        if "DECLARAÇÃO DE CONTEÚDO" in text.upper():
+                            # Redimensionar esta página para 100x150mm
+                            decl_bytes, _ = build_fit_only(
+                                pdf_bytes=pdf_bytes,
+                                page_index=idx,
+                                x_left_mm=0.0,
+                                y_top_mm=0.0,
+                                width_mm=210.0,
+                                height_mm=297.0,
+                                extra_top_mm=0.0,
+                                extra_right_mm=0.0,
+                                extra_left_mm=0.0,
+                                extra_bottom_mm=0.0,
+                                target_width_mm=100.0,
+                                target_height_mm=150.0,
+                            )
+                            r_decl = PdfReader(io.BytesIO(decl_bytes))
+                            combined_fit_writer.add_page(r_decl.pages[0])
+                            found_decl = True
+                            break
+                    # Se não encontrar, não faz nada extra
+
             st.success("Processamento concluído!")
 
             with st.expander("Baixar 100×150 individuais"):
