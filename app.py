@@ -4,11 +4,13 @@
 #   - Página 1 de cada PDF: etiqueta recortada → 100×150 mm (fit proporcional)
 #   - Página 2 de cada PDF: DACE RESUMIDA → 100×150 mm (página inteira)
 #   - Gera 1 PDF COMBINADO (multi-página): etiqueta + DACE intercalados
+#   - Pré-visualização de cada etiqueta e DACE antes do download
 
 import io
 from copy import deepcopy
 from datetime import datetime
 
+import fitz  # PyMuPDF
 import streamlit as st
 from pypdf import PdfReader, PdfWriter, Transformation
 from pypdf.generic import RectangleObject
@@ -137,6 +139,14 @@ def fit_full_page(pdf_bytes: bytes, page_index: int) -> bytes:
     return buf.getvalue()
 
 
+def pdf_to_png(pdf_bytes: bytes, dpi: int = 150) -> bytes:
+    """Renderiza a página 0 de um PDF como PNG."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    mat = fitz.Matrix(dpi / 72, dpi / 72)
+    pix = doc[0].get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+    return pix.tobytes("png")
+
+
 # ------------------------ UI ------------------------
 with st.sidebar:
     st.header("Recorte da etiqueta (pág. 1)")
@@ -168,7 +178,8 @@ if st.button("Processar"):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         combined_writer = PdfWriter() if combine_fit else None
 
-        per_file: list[tuple[str, bytes, bytes | None]] = []
+        # (nome, label_bytes, dace_bytes, label_png, dace_png)
+        per_file: list[tuple[str, bytes, bytes | None, bytes, bytes | None]] = []
         errors: list[str] = []
         progress = st.progress(0, text="Processando...")
 
@@ -176,10 +187,8 @@ if st.button("Processar"):
             progress.progress(i / len(uploaded_files), text=f"Processando {f.name}…")
             try:
                 pdf_bytes = f.read()
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                n_pages = len(reader.pages)
+                n_pages = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
 
-                # Página 1: etiqueta
                 label_bytes, _ = build_fit_only(
                     pdf_bytes=pdf_bytes,
                     page_index=0,
@@ -195,10 +204,12 @@ if st.button("Processar"):
                     target_height_mm=target_height_mm,
                 )
 
-                # Página 2: DACE RESUMIDA (se existir)
                 dace_bytes = fit_full_page(pdf_bytes, 1) if n_pages >= 2 else None
 
-                per_file.append((f.name, label_bytes, dace_bytes))
+                label_png = pdf_to_png(label_bytes)
+                dace_png  = pdf_to_png(dace_bytes) if dace_bytes else None
+
+                per_file.append((f.name, label_bytes, dace_bytes, label_png, dace_png))
 
                 if combined_writer:
                     combined_writer.add_page(PdfReader(io.BytesIO(label_bytes)).pages[0])
@@ -218,28 +229,37 @@ if st.button("Processar"):
         if per_file:
             st.success(f"{len(per_file)} de {len(uploaded_files)} arquivo(s) processado(s) com sucesso.")
 
-            with st.expander("Baixar arquivos individuais"):
-                for name, label_b, dace_b in per_file:
-                    base = name.rsplit(".", 1)[0]
+            # ── Pré-visualização ──────────────────────────────────────────
+            st.subheader("Pré-visualização")
+            for name, label_b, dace_b, label_png, dace_png in per_file:
+                base = name.rsplit(".", 1)[0]
+                with st.expander(f"📄 {base}", expanded=True):
                     col1, col2 = st.columns(2)
                     with col1:
+                        st.caption("Etiqueta (100×150 mm)")
+                        st.image(label_png, use_container_width=True)
                         st.download_button(
-                            f"⬇️ {base} – Etiqueta",
+                            "⬇️ Baixar etiqueta",
                             data=label_b,
                             file_name=f"{base}_etiqueta.pdf",
                             mime="application/pdf",
+                            key=f"dl_label_{name}",
                         )
                     with col2:
-                        if dace_b:
+                        st.caption("DACE RESUMIDA (100×150 mm)")
+                        if dace_png:
+                            st.image(dace_png, use_container_width=True)
                             st.download_button(
-                                f"⬇️ {base} – DACE",
+                                "⬇️ Baixar DACE",
                                 data=dace_b,
                                 file_name=f"{base}_dace.pdf",
                                 mime="application/pdf",
+                                key=f"dl_dace_{name}",
                             )
                         else:
-                            st.caption("DACE não encontrada (apenas 1 página)")
+                            st.info("DACE não encontrada (apenas 1 página no arquivo).")
 
+            # ── Download combinado ────────────────────────────────────────
             if combined_writer:
                 buf = io.BytesIO()
                 combined_writer.write(buf)
